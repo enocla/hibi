@@ -2662,6 +2662,10 @@ test('unfinished syntax never resolves or writes cells with old spans', {
     view.dispatch({ changes: { from: 0, insert: 'prefix ' } })
   })
   await harness.evaluate(() => window.tables.settle())
+  await harness.waitForFunction(() => {
+    const editor = document.querySelector('.hibi-lp-cell-editor')
+    return editor?.querySelector('.cm-content')?.textContent === 'right19998'
+  })
   const now = await state()
   assert.deepEqual([now.cell, now.editor], ['20000:1', 'right19998'])
 })

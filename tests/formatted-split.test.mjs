@@ -361,7 +361,7 @@ function lead(at) {
 
 // Whether the formatted pane shows the text of the table row at the source
 // pane's middle at the same height as the source line.
-function linedUp() {
+function linedUp(diagnostics = false) {
   const scroller = document.querySelector('.source-pane .cm-scroller')
   const content = scroller.querySelector('.cm-content')
   const view = content.cmTile.root.view
@@ -384,6 +384,18 @@ function linedUp() {
   const text = cell && document.createRange()
   text?.selectNodeContents(cell.querySelector('p') ?? cell)
   const drawn = text?.getBoundingClientRect()
+  if (diagnostics)
+    return {
+      line: line.text,
+      source: [point?.top, point?.bottom, scroller.scrollTop],
+      rich: [
+        drawn?.top,
+        drawn?.bottom,
+        document.querySelector('.rich-pane').scrollTop,
+      ],
+      row: cell?.parentElement.dataset.line,
+      focus: document.activeElement?.outerHTML.slice(0, 400),
+    }
   return (
     !!point &&
     !!drawn &&
@@ -398,7 +410,12 @@ async function staysLinedUp(page, check, arg, label = check.name) {
   await waitForAsync(page, check, arg, { label })
   for (let frame = 0; frame < 10; frame++) {
     await frames(page, 1)
-    assert.ok(await page.evaluate(check, arg), label)
+    if (!(await page.evaluate(check, arg)))
+      assert.fail(
+        check === linedUp
+          ? `${label}: ${JSON.stringify(await page.evaluate(linedUp, true))}`
+          : label,
+      )
   }
 }
 

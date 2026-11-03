@@ -227,7 +227,14 @@ const scrolled = (page) =>
  * Leave and reopen the source view `count` times, returning where it shows
  * each time; `grow` runs once, after the first leave.
  */
-async function returns(page, view, units, count, grow = async () => {}) {
+async function returns(
+  page,
+  view,
+  units,
+  count,
+  before,
+  grow = async () => {},
+) {
   const places = []
   for (let visit = 0; visit < count; visit++) {
     await view('normal')
@@ -238,6 +245,29 @@ async function returns(page, view, units, count, grow = async () => {}) {
     )
     await view('Source view')
     await sourceShown(page, units)
+    // The pane can be editable before CodeMirror finishes restoring its
+    // measured line heights and scroll anchor. Check the returned place,
+    // then require it to hold across subsequent layout frames.
+    await waitForAsync(
+      page,
+      (before) => {
+        const view = document.querySelector('.source-pane .cm-content').cmTile
+          .root.view
+        const height =
+          view.scrollDOM.getBoundingClientRect().top - view.documentTop
+        const line = view.lineBlockAtHeight(height)
+        return (
+          line.from === before.top &&
+          Math.abs(height - line.top - before.offset) < 1
+        )
+      },
+      before,
+      { label: `source place ${JSON.stringify(before)}` },
+    )
+    for (let frame = 0; frame < 10; frame++) {
+      await page.evaluate(() => new Promise(requestAnimationFrame))
+      samePlace([await scrolled(page)], before)
+    }
     places.push(await scrolled(page))
   }
   return places
@@ -292,7 +322,7 @@ test("a large note's source view returns to the same line and pixel every time",
   await scrollInto(page, 19000)
   const before = await scrolled(page)
   assert.ok(before.top > 0 && before.offset > 0, JSON.stringify(before))
-  const places = await returns(page, view, 1024 * 1024, 4)
+  const places = await returns(page, view, 1024 * 1024, 4, before)
   samePlace(places, before)
 })
 
@@ -307,7 +337,7 @@ test("a large note's source view returns to the same line and pixel at another z
   await scrollInto(page, 20000)
   const before = await scrolled(page)
   assert.ok(before.top > 0 && before.offset > 0, JSON.stringify(before))
-  const places = await returns(page, view, 1024 * 1024, 4)
+  const places = await returns(page, view, 1024 * 1024, 4, before)
   samePlace(places, before)
 })
 
@@ -341,7 +371,7 @@ test("with reduced motion, a large note's source view returns to the same line a
   )
   await scrollInto(page, 20000)
   const before = await scrolled(page)
-  const places = await returns(page, view, 256 * 1024, 4)
+  const places = await returns(page, view, 256 * 1024, 4, before)
   samePlace(places, before)
 })
 
@@ -366,7 +396,7 @@ test("an unrelated paused transition does not hold a returning source view's pla
   await sourceShown(page)
   await scrollInto(page, 20000)
   const before = await scrolled(page)
-  const places = await returns(page, view, 1024 * 1024, 2)
+  const places = await returns(page, view, 1024 * 1024, 2, before)
   samePlace(places, before)
 })
 
@@ -394,7 +424,7 @@ test("stopped pane motion does not hold a returning source view's place", {
     await new Promise(requestAnimationFrame)
     for (const transition of panes.getAnimations()) transition.playbackRate = 0
   })
-  samePlace(await returns(page, view, 1024 * 1024, 2), before)
+  samePlace(await returns(page, view, 1024 * 1024, 2, before), before)
 })
 
 test('a source view left while its place waits for pane motion is released', {
@@ -452,7 +482,8 @@ test('a returned source view scrolled by script keeps the new place', {
   await sourceShown(page)
   await scrollInto(page, 20000)
   // The view comes back to its place and holds it.
-  const [held] = await returns(page, view, 1024 * 1024, 1)
+  const before = await scrolled(page)
+  const [held] = await returns(page, view, 1024 * 1024, 1, before)
   t.diagnostic(
     JSON.stringify(
       await page.evaluate(() => {
@@ -471,7 +502,7 @@ test('a returned source view scrolled by script keeps the new place', {
   })
   const user = await scrolled(page)
   assert.notEqual(user.top, held.top, JSON.stringify({ held, user }))
-  samePlace(await returns(page, view, 1024 * 1024, 2), user)
+  samePlace(await returns(page, view, 1024 * 1024, 2, user), user)
 })
 
 test("scrolling over a returning source view's gutter keeps the user's place", {
@@ -555,7 +586,7 @@ test('a source view released as its note grows returns to the same line and pixe
       })
       await window.hibi.flushDocumentChanges()
     })
-  const places = await returns(page, view, 256 * 1024, 4, grow)
+  const places = await returns(page, view, 256 * 1024, 4, before, grow)
   samePlace(places, before)
 })
 

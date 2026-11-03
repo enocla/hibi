@@ -305,7 +305,11 @@ for (const size of sizes)
             }
             let result
             try {
-              result = context.editor.applySourceEdits(request)
+              // Results, including busy, are idempotent for a request ID.
+              result = context.editor.applySourceEdits({
+                ...request,
+                requestId: `${request.requestId}:${attempt}`,
+              })
             } finally {
               prototype.toString = original
             }
@@ -328,9 +332,13 @@ for (const size of sizes)
           contentVersion: first.contentVersion,
           changes: [{ from: 2, to: 3, insert: 's', expectedText: 'Q' }],
         })
-        return [first.status, second.status]
+        return [first, second]
       })
-      assert.deepEqual(statuses, ['applied', 'applied'])
+      assert.deepEqual(
+        statuses.map((result) => result.status),
+        ['applied', 'applied'],
+        JSON.stringify(statuses),
+      )
       await page.evaluate(() => window.hibi.flushDocumentChanges())
     }
     const offset = source.startsWith('\uFEFF') ? 1 : 0
