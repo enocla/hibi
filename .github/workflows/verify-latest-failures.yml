@@ -1,0 +1,35 @@
+name: verify latest CI failures
+on:
+  push:
+    branches: [ci/latest-failure-verification]
+permissions:
+  contents: read
+jobs:
+  desktop:
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+      - run: node .github/actions/ci/install.mjs
+      - run: npm run build
+      - name: Repeat failing cases
+        shell: bash
+        run: |
+          test_command=(node --test --test-reporter=tap --test-concurrency=1 --test-name-pattern="a workspace cache folder|50 mib source|unfinished syntax never|with reduced motion|a source view released as its note grows returns|formatted split lines up a long table" tests/remote-images.test.mjs tests/document-scale.test.mjs tests/formatted-tables.test.mjs tests/formatted-hidden-source.test.mjs tests/formatted-split.test.mjs)
+          result=0
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt"
+            if [ "$RUNNER_OS" = Linux ]; then
+              dbus-run-session -- xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24 -nolisten tcp' "${test_command[@]}" || result=1
+            else
+              "${test_command[@]}" || result=1
+            fi
+          done
+          exit "$result"
